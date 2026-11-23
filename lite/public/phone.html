@@ -6,12 +6,13 @@
 <title>Split-flap remote</title>
 <link rel="icon" href="data:," />
 <style>
-  :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --ink: #f2f2ee; --dim: #8a8a85; --go: #2f9e44; --bad: #e5484d; }
-  * { box-sizing: border-box; }
+  :root { --bg: #0b0b0b; --panel: #151515; --panel2: #1c1c1c; --line: #2a2a2a; --ink: #f2f2ee; --dim: #8a8a85;
+    --go: #2f9e44; --bad: #e5484d; --sign: #ffcc00; }
+  * { box-sizing: border-box; min-width: 0; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
-  h1 { font-size: 20px; margin: 0 0 16px; display: flex; align-items: center; gap: 10px; }
-  #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+  #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: none; }
   #dot.on { background: var(--go); }
   label { display: block; font-size: 13px; color: var(--dim); margin: 14px 0 6px; }
   input, textarea, select { width: 100%; font: 16px ui-monospace, Menlo, Consolas, monospace; color: var(--ink);
@@ -20,18 +21,70 @@
   input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid #5b8def; outline-offset: 1px; }
   .row { display: flex; gap: 10px; align-items: end; }
   .row > * { flex: 1; }
-  button { min-height: 44px; font: 600 16px system-ui; border: 0; border-radius: 8px; padding: 0 18px;
+  button { min-height: 44px; font: 600 16px system-ui; border: 0; border-radius: 8px; padding: 0 16px;
     background: #2a2a2a; color: var(--ink); cursor: pointer; }
   button.go { background: var(--go); }
-  button:disabled { opacity: .5; }
   .msg { min-height: 1.5em; font-size: 14px; color: var(--dim); margin-top: 8px; }
   .msg.bad { color: var(--bad); }
-  #preview { display: grid; gap: 2px; margin-top: 16px; padding: 6px; background: #000; border-radius: 6px; }
-  #preview span { aspect-ratio: 2 / 3; background: #1b1b1b; border-radius: 2px; display: grid; place-items: center;
+  .hint { font-size: 14px; color: var(--dim); margin: 0 0 10px; }
+  [hidden] { display: none !important; }
+
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--panel); border-radius: 10px; padding: 4px; gap: 4px; }
+  .tabs button { background: transparent; color: var(--dim); }
+  .tabs button[aria-selected="true"] { background: #2e2e2e; color: var(--ink); }
+  #showing { font-size: 14px; color: var(--dim); margin: 10px 2px 0; }
+  #showing b { color: var(--sign); font-weight: 600; }
+
+  .preview { display: grid; gap: 2px; margin-top: 14px; padding: 6px; background: #000; border-radius: 6px; }
+  .preview span { aspect-ratio: 2 / 3; background: #1b1b1b; border-radius: 2px; display: grid; place-items: center;
     font: 600 clamp(7px, 2.6vw, 14px) ui-monospace, monospace; }
   .tiles { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
   .tiles button { min-height: 36px; padding: 0 10px; font-size: 18px; }
-  #editor[hidden], #pair[hidden] { display: none; }
+
+  /* Widget list */
+  #wlist { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+  .w { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; }
+  .w.off .w-name { opacity: .45; }
+  .w.dragging { z-index: 5; background: var(--panel2); border-color: #555; box-shadow: 0 12px 30px rgba(0,0,0,.6); }
+  .w-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; }
+  .handle { width: 44px; padding: 0; background: transparent; touch-action: none; cursor: grab; display: grid; place-items: center; flex: none; }
+  .w.dragging .handle { cursor: grabbing; }
+  .handle svg { width: 16px; height: 22px; fill: var(--dim); }
+  .w-name { flex: 1; line-height: 1.25; }
+  .w-name small { display: block; color: var(--dim); font-size: 13px; }
+  .w-name small.bad { color: var(--bad); }
+  .edit { min-height: 36px; padding: 0 12px; font-size: 14px; background: #262626; }
+  .switch { position: relative; width: 48px; height: 28px; margin: 0; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; border-radius: 14px; background: #333; transition: background .15s; }
+  .switch span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: #ddd; transition: transform .15s; }
+  .switch input:checked + span { background: var(--go); }
+  .switch input:checked + span::after { transform: translateX(20px); }
+  .switch input:focus-visible + span { outline: 2px solid #5b8def; outline-offset: 2px; }
+  .w-body { padding: 4px 14px 14px; border-top: 1px solid var(--line); }
+  .w-body label { margin-top: 10px; }
+  .check { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 15px; min-height: 44px; margin: 4px 0 0; }
+  .check input { width: 22px; height: 22px; }
+  .item { display: grid; grid-template-columns: 8.5em minmax(0, 1fr) 44px; gap: 6px; margin-bottom: 6px; }
+  .item input { padding: 8px; }
+  .item button { padding: 0; font-size: 20px; }
+  .results { display: grid; gap: 6px; margin: 8px 0; }
+  .results button { text-align: left; font-weight: 500; background: #222; }
+  .w-body textarea { min-height: 70px; }
+  .hint.bad { color: var(--bad); }
+  .cal { background: #111; border: 1px solid var(--line); border-radius: 8px; padding: 2px 12px 12px; margin-bottom: 4px; }
+  .cal label { margin-top: 10px; color: var(--ink); font-weight: 600; font-size: 14px; }
+  .cal [data-cal-remove] { width: 100%; }
+  .howto summary { cursor: pointer; color: #9ab8ff; font-size: 14px; min-height: 32px; }
+  .howto ol { margin: 6px 0; padding-left: 20px; font-size: 14px; color: var(--dim); }
+  .howto li { margin-bottom: 4px; }
+  .cal-item { display: grid; grid-template-columns: 6em minmax(0, 1fr) auto; gap: 8px; align-items: center;
+    padding: 8px 10px; margin-bottom: 6px; background: #181818; border-radius: 8px; font-size: 15px; }
+  .cal-item span:first-child { font-variant-numeric: tabular-nums; color: var(--dim); }
+  .cal-item span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cal-item small { color: #9ab8ff; font-size: 12px; }
+  @media (prefers-reduced-motion: reduce) { .switch span, .switch span::after { transition: none; } }
 </style>
 </head>
 <body>
@@ -47,23 +100,43 @@
     <div id="pair-msg" class="msg"></div>
   </form>
 
-  <section id="editor" hidden>
-    <label for="text">Message — one line per row; long lines wrap at words</label>
-    <textarea id="text" spellcheck="false"></textarea>
-    <div class="tiles" id="tiles"></div>
-    <div id="preview" aria-label="Preview of the board"></div>
-    <div id="count" class="msg"></div>
+  <section id="app" hidden>
+    <div class="tabs" role="tablist">
+      <button id="tab-message" role="tab" aria-selected="true" aria-controls="panel-message">Message</button>
+      <button id="tab-widgets" role="tab" aria-selected="false" aria-controls="panel-widgets">Widgets</button>
+    </div>
+    <p id="showing"></p>
+    <p id="old-server" class="msg bad" hidden>The server is running an older version that doesn't support widgets. Restart it (<code>npm run lite</code>), then reload the board and this page.</p>
 
-    <div class="row" style="margin-top:12px">
-      <div><label for="align">Alignment</label>
-        <select id="align"><option value="left">Left</option><option value="center">Centered</option></select></div>
-      <div><label for="cols">Columns</label><input id="cols" type="number" min="4" max="40" /></div>
-      <div><label for="rows">Rows</label><input id="rows" type="number" min="1" max="12" /></div>
+    <!-- Message ------------------------------------------------------>
+    <div id="panel-message" role="tabpanel">
+      <label for="text">Message — one line per row; long lines wrap at words</label>
+      <textarea id="text" spellcheck="false"></textarea>
+      <div class="tiles" id="tiles"></div>
+      <div id="preview" class="preview" aria-label="Preview of the board"></div>
+      <div id="count" class="msg"></div>
+      <label for="align">Alignment</label>
+      <select id="align"><option value="left">Left</option><option value="center">Centered</option></select>
+      <div class="row" style="margin-top:16px">
+        <button id="clear">Clear board</button>
+        <button id="send" class="go">Show on board</button>
+      </div>
     </div>
 
-    <div class="row" style="margin-top:16px">
-      <button id="clear">Clear board</button>
-      <button id="send" class="go">Show on board</button>
+    <!-- Widgets ------------------------------------------------------>
+    <div id="panel-widgets" role="tabpanel" hidden>
+      <div id="wpreview" class="preview" aria-label="Preview of the widgets on the board"></div>
+      <div id="wcount" class="msg"></div>
+      <p class="hint">Drag the handle to change the order on the board. Use the switch to hide a widget.</p>
+      <ol id="wlist"></ol>
+      <label for="walign">Alignment</label>
+      <select id="walign"><option value="left">Left</option><option value="center">Centered</option></select>
+      <button id="show-widgets" class="go" style="width:100%;margin-top:16px">Show widgets on board</button>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <div><label for="cols">Board columns</label><input id="cols" type="number" min="4" max="40" /></div>
+      <div><label for="rows">Board rows</label><input id="rows" type="number" min="1" max="12" /></div>
     </div>
     <div id="send-msg" class="msg"></div>
   </section>
@@ -72,16 +145,17 @@
 <script src="layout.js"></script>
 <script>
 {
-  const { COLORS, layout } = window.Flap;
+  const { COLORS, layout, WIDGETS, defaultWidgets, widgetBlocks, todayItems, localDate, fmtTime } = window.Flap;
   const $ = (id) => document.getElementById(id);
-  const st = { code: "", cols: 22, rows: 6, online: false };
+  const st = { code: "", cols: 22, rows: 6, online: false, mode: "message", widgets: defaultWidgets(), wx: null,
+    calendar: { events: [], status: {} } };   // from the server; never includes the feed URL
   let ws = null;
 
+  // ── Connection ───────────────────────────────────────────────────
   function send(o) {
     if (ws && ws.readyState === 1) { ws.send(JSON.stringify(o)); return true; }
     return false;
   }
-
   function connect() {
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
     ws.onopen = () => { $("dot").className = "on"; if (st.code) send({ type: "join", code: st.code }); };
@@ -91,57 +165,93 @@
       if (m.type === "error") { $("pair-msg").textContent = m.message; $("pair-msg").className = "msg bad"; st.code = ""; }
       if (m.type === "joined") {
         st.code = m.code; location.hash = m.code;
-        $("pair").hidden = true; $("editor").hidden = false;
+        $("pair").hidden = true; $("app").hidden = false;
         $("which").textContent = "· " + m.code;
         if (m.text && !$("text").value) { $("text").value = m.text; $("align").value = m.align; }
+        if (m.widgets) st.widgets = m.widgets;
+        if (m.calendar) st.calendar = m.calendar;
+        // A server started before widgets existed never sends `mode`, and
+        // silently drops widget messages: say so instead of failing quietly.
+        st.oldServer = !("mode" in m);
+        $("old-server").hidden = !st.oldServer;
+        pruneOldItems();
+        renderWidgetList();
+        loadPhoneWeather();
+        setMode(m.mode);
+        selectTab(m.mode === "widgets" ? "widgets" : "message");
         setOnline(m.online); setSize(m.cols, m.rows);
       }
       if (m.type === "size" || m.type === "board_online") { setSize(m.cols, m.rows); if (m.type === "board_online") setOnline(true); }
       if (m.type === "board_offline") setOnline(false);
       if (m.type === "text") { $("text").value = m.text; $("align").value = m.align; preview(); }
+      if (m.type === "mode") setMode(m.mode);
+      if (m.type === "calendar") {
+        st.calendar = { events: m.events || [], status: m.status || {} };
+        const li = document.querySelector('#wlist li[data-id="schedule"]');
+        if (li && !li.querySelector(".item")?.parentElement.contains(document.activeElement)) drawSchedule();
+        calStatus(); wpreview();
+      }
+      if (m.type === "calendar_error") {
+        const err = document.querySelector("[data-cal-err]");
+        if (err) err.textContent = m.message;
+        calStatus();
+      }
+      if (m.type === "widgets") {          // changed from another phone
+        st.widgets = m.widgets;
+        if (!dragging && !$("wlist").contains(document.activeElement)) renderWidgetList();
+        loadPhoneWeather(); wpreview();
+      }
     };
   }
-
   function setOnline(on) {
     st.online = on;
-    $("send-msg").textContent = on ? "" : "The board is offline — messages will show when it reconnects.";
+    $("send-msg").textContent = on ? "" : "The board is offline. Changes will show when it reconnects.";
   }
   function setSize(cols, rows) {
     if (cols) st.cols = cols; if (rows) st.rows = rows;
     $("cols").value = st.cols; $("rows").value = st.rows;
-    preview();
+    preview(); wpreview();
+  }
+  function setMode(mode) {
+    st.mode = mode === "widgets" ? "widgets" : "message";
+    if (st.mode === "widgets" && $("send-msg").textContent === "Sending…") $("send-msg").textContent = "Widgets are on the board.";
+    $("showing").innerHTML = `Board is showing: <b>${st.mode === "widgets" ? "widgets" : "your message"}</b>`;
   }
 
+  // ── Tabs ─────────────────────────────────────────────────────────
+  function selectTab(name) {
+    for (const t of ["message", "widgets"]) {
+      $("tab-" + t).setAttribute("aria-selected", String(t === name));
+      $("panel-" + t).hidden = t !== name;
+    }
+    if (name === "widgets") wpreview();
+  }
+  $("tab-message").addEventListener("click", () => selectTab("message"));
+  $("tab-widgets").addEventListener("click", () => selectTab("widgets"));
+
+  // ── Shared preview grid ──────────────────────────────────────────
+  const esc = (ch) => (ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch);
+  function drawGrid(el, grid) {
+    el.style.gridTemplateColumns = `repeat(${st.cols}, minmax(0, 1fr))`;
+    el.innerHTML = grid.map((ch) => COLORS[ch] ? `<span style="background:${COLORS[ch]}"></span>` : `<span>${esc(ch)}</span>`).join("");
+  }
+
+  // ── Message tab ──────────────────────────────────────────────────
   function preview() {
     const { grid, overflow } = layout($("text").value, st.cols, st.rows, $("align").value);
-    const p = $("preview");
-    p.style.gridTemplateColumns = `repeat(${st.cols}, minmax(0, 1fr))`;
-    p.innerHTML = grid.map((ch) =>
-      COLORS[ch] ? `<span style="background:${COLORS[ch]}"></span>` : `<span>${ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch}</span>`).join("");
+    drawGrid($("preview"), grid);
     $("count").textContent = overflow ? `Too long: only the first ${st.rows} rows will show.` : `${st.cols} × ${st.rows} board`;
     $("count").className = overflow ? "msg bad" : "msg";
   }
-
-  $("pair").addEventListener("submit", (e) => {
-    e.preventDefault();
-    st.code = $("code").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (st.code.length !== 4) { $("pair-msg").textContent = "The code has 4 characters."; $("pair-msg").className = "msg bad"; return; }
-    $("pair-msg").textContent = "Connecting…"; $("pair-msg").className = "msg";
-    send({ type: "join", code: st.code });
-  });
-
   function showText(text) {
     const ok = send({ type: "show", text, align: $("align").value });
-    $("send-msg").textContent = ok ? (st.online ? "Sent." : "Saved — the board is offline.") : "Not connected to the server.";
+    $("send-msg").textContent = ok ? (st.online ? "Sent." : "Saved. The board is offline.") : "Not connected to the server.";
   }
   $("send").addEventListener("click", () => showText($("text").value));
   $("clear").addEventListener("click", () => showText(""));
   $("text").addEventListener("input", preview);
   $("text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) showText($("text").value); });
   $("align").addEventListener("change", preview);
-  for (const id of ["cols", "rows"]) $(id).addEventListener("change", () =>
-    send({ type: "config", cols: +$("cols").value, rows: +$("rows").value }));
-
   $("tiles").innerHTML = Object.keys(COLORS).map((c) => `<button type="button" aria-label="colour tile">${c}</button>`).join("");
   $("tiles").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
@@ -149,8 +259,330 @@
     ta.setRangeText(b.textContent, s, ta.selectionEnd, "end"); ta.focus(); preview();
   });
 
+  // ── Widgets tab ──────────────────────────────────────────────────
+  const GRIP = '<svg viewBox="0 0 10 16" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="2" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="2" cy="14" r="1.6"/><circle cx="8" cy="14" r="1.6"/></svg>';
+  const BODY = {
+    clock: `<label class="check"><input type="checkbox" data-h24> 24-hour time</label>`,
+    schedule: `<p class="hint" style="margin-top:10px">The board shows the next item today that hasn't started yet, from your Google Calendar and the items you add here.</p>
+      <div class="cal">
+        <label for="cal-url">Google Calendar</label>
+        <p class="hint" data-cal-status>Not connected.</p>
+        <div data-cal-form>
+          <div class="row"><input id="cal-url" data-cal-url type="url" autocomplete="off" spellcheck="false"
+            placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"><button type="button" data-cal-save style="flex:none">Connect</button></div>
+          <p class="msg bad" data-cal-err></p>
+          <details class="howto"><summary>Where do I find this link?</summary><ol>
+            <li>On a computer, open <b>calendar.google.com</b> (the phone app doesn't show this link).</li>
+            <li>Open <b>Settings</b> (gear icon), then under <b>Settings for my calendars</b> pick your calendar.</li>
+            <li>Choose <b>Integrate calendar</b> and copy the <b>Secret address in iCal format</b>.</li>
+            <li>Paste it here. Treat it like a password: anyone with it can read that calendar. You can reset it on the same page.</li>
+          </ol><p class="hint">Work or school accounts may have this turned off by an administrator.</p></details>
+        </div>
+        <button type="button" data-cal-remove hidden>Disconnect calendar</button>
+      </div>
+      <label>Today</label>
+      <div data-items></div><button type="button" data-add>Add item</button>`,
+    weather: `<label>Location</label><div class="row"><input data-q placeholder="City name" autocomplete="off"><button type="button" data-search style="flex:none">Search</button></div>
+      <div class="results" data-results></div>
+      <button type="button" data-geo style="width:100%">Use my location</button>
+      <p class="hint" data-loc style="margin-top:8px"></p>
+      <label>Units</label><select data-unit><option value="F">Fahrenheit</option><option value="C">Celsius</option></select>`,
+    notes: `<label>Note (up to 2 rows on the board)</label><textarea data-notes maxlength="200" rows="2" placeholder="Pick up groceries"></textarea>`,
+  };
+
+  let sendTimer = 0;
+  function changed() {
+    wpreview();
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(() => send({ type: "widgets", widgets: st.widgets }), 250);
+  }
+  function pruneOldItems() {
+    const today = localDate(new Date());
+    st.widgets.schedule.items = st.widgets.schedule.items.filter((i) => i.date >= today);
+  }
+
+  function renderWidgetList() {
+    const w = st.widgets;
+    $("walign").value = w.align;
+    $("wlist").innerHTML = w.order.map((id) => `
+      <li class="w" data-id="${id}">
+        <div class="w-head">
+          <button type="button" class="handle" aria-label="Move ${WIDGETS[id].name}: drag, or press the up and down arrow keys">${GRIP}</button>
+          <div class="w-name"><b>${WIDGETS[id].name}</b><small data-rows></small></div>
+          <label class="switch"><input type="checkbox" data-on aria-label="Show ${WIDGETS[id].name} on the board"><span></span></label>
+          <button type="button" class="edit" aria-expanded="false">Edit</button>
+        </div>
+        <div class="w-body" hidden>${BODY[id]}</div>
+      </li>`).join("");
+    for (const li of $("wlist").children) bindWidget(li);
+    wpreview();
+  }
+
+  function bindWidget(li) {
+    const id = li.dataset.id, w = st.widgets, q = (s) => li.querySelector(s);
+    const on = q("[data-on]");
+    on.checked = w.on[id];
+    li.classList.toggle("off", !w.on[id]);
+    on.addEventListener("change", () => { w.on[id] = on.checked; li.classList.toggle("off", !on.checked); changed(); });
+    const edit = q(".edit"), body = q(".w-body");
+    edit.addEventListener("click", () => {
+      body.hidden = !body.hidden;
+      edit.setAttribute("aria-expanded", String(!body.hidden));
+      edit.textContent = body.hidden ? "Edit" : "Done";
+    });
+    bindDrag(li);
+
+    if (id === "clock") {
+      const c = q("[data-h24]");
+      c.checked = w.clock.h24;
+      c.addEventListener("change", () => { w.clock.h24 = c.checked; changed(); });
+    }
+    if (id === "schedule") {
+      const box = q("[data-items]");
+      const draw = () => {
+        const items = todayItems(w, new Date(), st.calendar.events);
+        box.innerHTML = items.length ? "" : '<p class="hint">Nothing scheduled today.</p>';
+        for (const it of items) {
+          if (it.fromCalendar) {        // read-only: change these in Google Calendar
+            const row = document.createElement("div");
+            row.className = "cal-item";
+            row.innerHTML = "<span></span><span></span><small>Google</small>";
+            const [h, m] = it.time.split(":").map(Number);
+            row.children[0].textContent = fmtTime(h, m, w.clock.h24);
+            row.children[1].textContent = it.title;
+            box.appendChild(row);
+            continue;
+          }
+          const row = document.createElement("div");
+          row.className = "item";
+          row.innerHTML = '<input type="time" aria-label="Time"><input aria-label="What" maxlength="60" placeholder="What"><button type="button" aria-label="Remove item">×</button>';
+          const [t, title, del] = row.children;
+          t.value = it.time; title.value = it.title;
+          t.addEventListener("change", () => { if (t.value) { it.time = t.value; changed(); } });
+          title.addEventListener("input", () => { it.title = title.value; changed(); });
+          del.addEventListener("click", () => { w.schedule.items.splice(w.schedule.items.indexOf(it), 1); draw(); changed(); });
+          box.appendChild(row);
+        }
+      };
+      draw();
+      drawSchedule = draw;
+      // Calendar connect / disconnect. The URL goes to the server only; the
+      // phone never gets it back, just a short label and the sync status.
+      const urlIn = q("[data-cal-url]"), err = q("[data-cal-err]");
+      const connect = () => {
+        err.textContent = "";
+        if (!urlIn.value.trim()) { err.textContent = "Paste the secret address first."; return; }
+        if (!send({ type: "calendar", url: urlIn.value.trim() })) { err.textContent = "Not connected to the server."; return; }
+        q("[data-cal-status]").textContent = "Connecting…";
+      };
+      q("[data-cal-save]").addEventListener("click", connect);
+      urlIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); connect(); } });
+      q("[data-cal-remove]").addEventListener("click", () => send({ type: "calendar", url: "" }));
+      calStatus();
+      q("[data-add]").addEventListener("click", () => {
+        const d = new Date(), h = Math.min(23, d.getHours() + 1);
+        w.schedule.items.push({ date: localDate(d), time: `${String(h).padStart(2, "0")}:00`, title: "" });
+        draw(); changed();
+        const inputs = box.querySelectorAll('input:not([type="time"])');
+        inputs[inputs.length - 1]?.focus();
+      });
+    }
+    if (id === "weather") {
+      const loc = q("[data-loc]"), results = q("[data-results]"), unit = q("[data-unit]"), qi = q("[data-q]");
+      const showLoc = () => (loc.textContent = w.weather.lat == null ? "No location set yet." : `Showing weather for ${w.weather.name || `${w.weather.lat}, ${w.weather.lon}`}.`);
+      const setLoc = (lat, lon, name) => {
+        Object.assign(w.weather, { lat, lon, name }); results.innerHTML = ""; showLoc();
+        loadPhoneWeather(); changed();
+      };
+      showLoc();
+      unit.value = w.weather.unit;
+      unit.addEventListener("change", () => { w.weather.unit = unit.value; loadPhoneWeather(); changed(); });
+      const search = async () => {
+        const term = qi.value.trim();
+        if (term.length < 2) return;
+        results.innerHTML = '<p class="hint">Searching…</p>';
+        try {
+          const j = await (await fetch(`/api/geocode?q=${encodeURIComponent(term)}`)).json();
+          results.innerHTML = "";
+          if (!j.ok || !j.results.length) { results.innerHTML = '<p class="hint">No places found.</p>'; return; }
+          for (const r of j.results) {
+            const b = document.createElement("button");
+            b.type = "button"; b.textContent = r.name;
+            b.addEventListener("click", () => { qi.value = ""; setLoc(r.lat, r.lon, r.name); });
+            results.appendChild(b);
+          }
+        } catch (_) { results.innerHTML = '<p class="hint">Search failed. Check the server connection.</p>'; }
+      };
+      q("[data-search]").addEventListener("click", search);
+      qi.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } });
+      q("[data-geo]").addEventListener("click", () => {
+        if (!window.isSecureContext || !navigator.geolocation) {
+          loc.textContent = "Your browser only shares location over HTTPS or on localhost. Search for a city instead.";
+          return;
+        }
+        loc.textContent = "Finding your location…";
+        navigator.geolocation.getCurrentPosition(
+          (p) => setLoc(+p.coords.latitude.toFixed(4), +p.coords.longitude.toFixed(4), "my location"),
+          () => { loc.textContent = "Location was not shared. Search for a city instead."; },
+          { timeout: 10000 });
+      });
+    }
+    if (id === "notes") {
+      const n = q("[data-notes]");
+      n.value = w.notes.text;
+      n.addEventListener("input", () => { w.notes.text = n.value; changed(); });
+    }
+  }
+
+  // ── Google Calendar status in the schedule widget ─────────────────
+  let drawSchedule = () => {};
+  function calStatus() {
+    const li = document.querySelector('#wlist li[data-id="schedule"]');
+    if (!li) return;
+    const s = st.calendar.status || {}, el = li.querySelector("[data-cal-status]");
+    li.querySelector("[data-cal-form]").hidden = !!s.connected;
+    li.querySelector("[data-cal-remove]").hidden = !s.connected;
+    el.className = "hint";
+    if (!s.connected) { el.textContent = "Not connected."; return; }
+    li.querySelector("[data-cal-url]").value = "";
+    li.querySelector("[data-cal-err]").textContent = "";
+    const n = todayItems(st.widgets, new Date(), st.calendar.events).filter((i) => i.fromCalendar).length;
+    const when = s.syncedAt ? new Date(s.syncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    if (s.syncing && !s.syncedAt) el.textContent = `Connecting to ${s.label}…`;
+    else if (s.ok) el.textContent = `Connected to ${s.label}. ${n} timed event${n === 1 ? "" : "s"} today. Last checked ${when}; checks every 5 minutes.`;
+    else {
+      el.textContent = `Connected to ${s.label}, but reading it failed: ${s.error}` + (when ? ` Showing events from ${when}.` : "");
+      el.className = "hint bad";
+    }
+  }
+
+  // ── Drag to reorder (pointer events: works with touch and mouse) ──
+  let dragging = false;
+  function bindDrag(li) {
+    const handle = li.querySelector(".handle"), list = $("wlist");
+    const mid = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      dragging = true;
+      li.classList.add("dragging");
+      const startY = e.clientY;
+      let shift = 0;   // how far the item's slot has moved since the drag began
+      const place = (y) => (li.style.transform = `translateY(${y - startY - shift}px)`);
+      // Swap with a neighbour once the pointer passes its middle. Only the
+      // neighbour is ever moved in the DOM: moving the dragged item itself
+      // would drop the pointer capture and lose the drop.
+      const move = (ev) => {
+        place(ev.clientY);
+        let swapped = false;
+        for (;;) {
+          const next = li.nextElementSibling, prev = li.previousElementSibling, before = li.offsetTop;
+          if (next && ev.clientY > mid(next)) list.insertBefore(next, li);
+          else if (prev && ev.clientY < mid(prev)) list.insertBefore(prev, li.nextElementSibling);
+          else break;
+          shift += li.offsetTop - before;
+          swapped = true;
+        }
+        if (swapped) { place(ev.clientY); wpreviewOrder(); }
+      };
+      const end = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", end);
+        handle.removeEventListener("pointercancel", end);
+        handle.removeEventListener("lostpointercapture", end);
+        li.style.transform = "";
+        li.classList.remove("dragging");
+        dragging = false;
+        commitOrder();
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", end);
+      handle.addEventListener("pointercancel", end);
+      handle.addEventListener("lostpointercapture", end);
+    });
+    handle.addEventListener("keydown", (e) => {
+      const prev = li.previousElementSibling, next = li.nextElementSibling;
+      if (e.key === "ArrowUp" && prev) list.insertBefore(prev, next);
+      else if (e.key === "ArrowDown" && next) list.insertBefore(next, li);
+      else return;
+      e.preventDefault();
+      handle.focus();
+      commitOrder();
+    });
+  }
+  const domOrder = () => [...$("wlist").children].map((li) => li.dataset.id);
+  function wpreviewOrder() { st.widgets.order = domOrder(); wpreview(); }
+  function commitOrder() {
+    st.widgets.order = domOrder();
+    changed();
+  }
+
+  // ── Widgets preview ──────────────────────────────────────────────
+  function wpreview() {
+    const w = st.widgets, ctx = { now: new Date(), cols: st.cols, weather: st.wx, calendar: st.calendar.events };
+    const blocks = widgetBlocks(w, ctx);
+    const text = blocks.flatMap((b) => b.lines).join("\n");
+    drawGrid($("wpreview"), layout(text, st.cols, st.rows, w.align).grid);
+    let used = 0;
+    for (const li of $("wlist").children) {
+      const id = li.dataset.id, b = blocks.find((x) => x.id === id), small = li.querySelector("[data-rows]");
+      if (!w.on[id]) { small.textContent = "Hidden"; small.className = ""; continue; }
+      const n = b ? b.lines.length : 0, start = used;
+      used += n;
+      const cut = used > st.rows;
+      small.textContent = n === 0 ? "Empty, uses no rows" : `${n} row${n > 1 ? "s" : ""}` + (cut ? (start >= st.rows ? ", doesn't fit" : ", partly cut off") : "");
+      small.className = cut && n ? "bad" : "";
+    }
+    $("wcount").textContent = used > st.rows
+      ? `Uses ${used} rows but the board has ${st.rows}. Hide a widget, reorder, or add rows.`
+      : `Uses ${used} of ${st.rows} rows`;
+    $("wcount").className = used > st.rows ? "msg bad" : "msg";
+  }
+  setInterval(() => { if (!$("panel-widgets").hidden) wpreview(); }, 15000);
+
+  async function loadPhoneWeather() {
+    const w = st.widgets.weather;
+    st.wx = null;
+    if (w.lat == null) return wpreview();
+    const key = `${w.lat},${w.lon},${w.unit}`;
+    try {
+      const j = await (await fetch(`/api/weather?lat=${w.lat}&lon=${w.lon}&unit=${w.unit}`)).json();
+      if (key === `${w.lat},${w.lon},${w.unit}`) st.wx = j.ok ? j : { error: true };
+    } catch (_) { st.wx = { error: true }; }
+    wpreview();
+  }
+
+  $("walign").addEventListener("change", () => { st.widgets.align = $("walign").value; changed(); });
+  $("show-widgets").addEventListener("click", () => {
+    clearTimeout(sendTimer);
+    if (st.oldServer) { $("send-msg").textContent = "Not shown: restart the server first (see the note above)."; return; }
+    const ok = send({ type: "widgets", widgets: st.widgets }) && send({ type: "mode", mode: "widgets" });
+    $("send-msg").textContent = !ok ? "Not connected to the server."
+      : !st.online ? "Saved. The board is offline." : "Sending…";
+    // The server echoes the mode back once it has switched the board.
+    clearTimeout(st.modeTimer);
+    if (ok && st.online) st.modeTimer = setTimeout(() => {
+      if (st.mode !== "widgets") $("send-msg").textContent = "The board didn't switch. Restart the server and reload the board.";
+    }, 3000);
+  });
+
+  // ── Board size (applies to both tabs) ────────────────────────────
+  for (const id of ["cols", "rows"]) $(id).addEventListener("change", () =>
+    send({ type: "config", cols: +$("cols").value, rows: +$("rows").value }));
+
+  // ── Pairing ──────────────────────────────────────────────────────
+  $("pair").addEventListener("submit", (e) => {
+    e.preventDefault();
+    st.code = $("code").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (st.code.length !== 4) { $("pair-msg").textContent = "The code has 4 characters."; $("pair-msg").className = "msg bad"; return; }
+    $("pair-msg").textContent = "Connecting…"; $("pair-msg").className = "msg";
+    send({ type: "join", code: st.code });
+  });
   const fromHash = location.hash.slice(1).toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (fromHash.length === 4) { st.code = fromHash; $("code").value = fromHash; }
+
+  window.__phone = { st };   // for automated tests
   connect();
 }
 </script>

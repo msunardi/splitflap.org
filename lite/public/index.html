@@ -44,6 +44,10 @@
   #bar button { font: 600 14px system-ui; padding: 7px 14px; border-radius: 6px; border: 0;
     background: #2a2a2a; color: var(--ink); cursor: pointer; }
   #bar .hint { color: #555; }
+  #bar > * { white-space: nowrap; flex: none; }
+  #bar form { flex: 0 1 auto; min-width: 0; }
+  #bar input { min-width: 120px; }
+  @media (max-width: 1400px) { #bar .hint { display: none; } }
   #bar #sound { background: #ffcc00; color: #141414; }
   #bar #sound[hidden] { display: none; }
   @media (max-width: 700px) { #bar .hint, #url { display: none; } }
@@ -76,6 +80,9 @@
     cols: +qs.get("cols") || saved.cols || 22,
     rows: +qs.get("rows") || saved.rows || 6,
     text: "", align: "left",
+    mode: "message",  // "message" | "widgets"
+    widgets: null,    // widget settings from the phone (see layout.js)
+    calendar: [],     // Google Calendar events from the server: { start, allDay, title }
     code: saved.code || "",
     stepMs: 70,       // time per flap step
     stagger: 18,      // ms delay per column when a new message starts
@@ -249,17 +256,60 @@
     if (busy) kick();
   }
 
-  function show(text, align) {
-    state.text = text; state.align = align;
-    setTargets(layout(text, state.cols, state.rows, align).grid);
+  // ── What the board shows: a message, or the stacked widgets ──────
+  // render() recomputes the whole grid; setTargets only flips cells whose
+  // character changed, so calling it every second for the clock is cheap.
+  function render() {
+    if (state.mode === "widgets") {
+      const w = state.widgets || Flap.defaultWidgets();
+      const text = Flap.widgetText(w, { now: new Date(), cols: state.cols, weather: wx, calendar: state.calendar });
+      setTargets(layout(text, state.cols, state.rows, w.align).grid);
+    } else {
+      setTargets(layout(state.text, state.cols, state.rows, state.align).grid);
+    }
   }
+  function show(text, align) {
+    state.mode = "message"; state.text = text; state.align = align;
+    render();
+  }
+  function setMode(mode) {
+    state.mode = mode === "widgets" ? "widgets" : "message";
+    loadWeather();
+    render();
+  }
+  function setWidgets(w) {
+    state.widgets = w;
+    loadWeather();
+    render();
+  }
+
+  // Weather comes from this server (/api/weather), refreshed every 10 min
+  // (every minute after a failure), and only while widgets are showing.
+  let wx = null, wxKey = "", wxBusy = false;
+  async function loadWeather() {
+    const w = state.widgets && state.widgets.weather;
+    if (state.mode !== "widgets" || !w || w.lat == null || wxBusy) return;
+    const key = `${w.lat},${w.lon},${w.unit}`;
+    if (key !== wxKey) { wx = null; wxKey = key; }
+    else if (wx && Date.now() - wx.at < (wx.error ? 60e3 : 600e3)) return;
+    wxBusy = true;
+    try {
+      const j = await (await fetch(`/api/weather?lat=${w.lat}&lon=${w.lon}&unit=${w.unit}`)).json();
+      if (key === wxKey) wx = j.ok ? { ...j, at: Date.now() } : { error: true, at: Date.now() };
+    } catch (_) {
+      if (key === wxKey) wx = { error: true, at: Date.now() };
+    }
+    wxBusy = false;
+    render();
+  }
+  setInterval(() => { if (state.mode === "widgets") { render(); loadWeather(); } }, 1000);
 
   function resize(cols, rows) {
     state.cols = Math.min(40, Math.max(4, cols | 0));
     state.rows = Math.min(12, Math.max(1, rows | 0));
     save();
     build();
-    show(state.text, state.align);
+    render();
     send({ type: "size", cols: state.cols, rows: state.rows });
   }
 
@@ -329,10 +379,16 @@
         document.getElementById("code").textContent = m.code;
         document.getElementById("url").textContent = `${location.host}/phone.html`;
         setPhones(m.phones);
-        if (m.text) show(m.text, m.align);
+        state.widgets = m.widgets || null;
+        state.calendar = (m.calendar && m.calendar.events) || [];
+        if (m.mode === "widgets") setMode("widgets");
+        else if (m.text) show(m.text, m.align);
         else if (!state.text) show(`\nSPLIT FLAP\nCODE ${m.code}`, "center");
       }
       if (m.type === "show") show(m.text, m.align);
+      if (m.type === "widgets") setWidgets(m.widgets);
+      if (m.type === "calendar") { state.calendar = m.events || []; render(); }
+      if (m.type === "mode") setMode(m.mode);
       if (m.type === "config") resize(m.cols, m.rows);
       if (m.type === "phones") setPhones(m.count);
     };
@@ -362,7 +418,7 @@
   addEventListener("resize", fit);
 
   // Exposed for automated tests.
-  window.__flap = { state, cells: () => cells, show, resize, sound: () => ({ state: actx && actx.state, wav: !!clickBuf, played: clicksPlayed }), layout: (t, a) => layout(t, state.cols, state.rows, a).grid };
+  window.__flap = { state, cells: () => cells, show, resize, weather: () => wx,sound: () => ({ state: actx && actx.state, wav: !!clickBuf, played: clicksPlayed }), layout: (t, a) => layout(t, state.cols, state.rows, a).grid };
 
   build();
   audio();
