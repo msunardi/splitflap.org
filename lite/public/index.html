@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Split-flap board</title>
+<link rel="icon" href="data:," />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg: #000; --ink: #f2f2ee; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
+  #stage { position: absolute; inset: 0 0 52px 0; display: grid; place-items: center; }
+  body.bar-hidden #stage { bottom: 0; }
+  #board { display: grid; background: #0f0f0f; border-radius: 6px;
+    box-shadow: 0 10px 30px -5px rgba(0,0,0,.4), 0 4px 10px rgba(0,0,0,.2); }
+
+  /* Flap structure, ported from the original board.html. Sizes and the
+     notched clip-paths are generated in flapCSS() below. */
+  .cell { position: relative; contain: layout style paint; }
+  .flap { position: absolute; left: 0; top: 0; transform-origin: top left; transform-style: preserve-3d; }
+  .flap * { box-sizing: border-box; }
+  .bezel, .hole, .hole-bg, .w-top, .w-bot, .w-fall, .split, .ridges { position: absolute; }
+  .bg-top, .bg-bot { width: 100%; height: 100%; }
+  .ridges { display: flex; flex-direction: column; overflow: hidden; }
+  .ridge { width: 100%; }
+  .txt { position: absolute; left: 0; display: flex; justify-content: center; align-items: center; z-index: 10;
+    pointer-events: none; font-family: "Roboto Mono", ui-monospace, Consolas, monospace; font-weight: 300;
+    color: #fff; line-height: 1; text-align: center; }
+  .w-fall { transform-origin: bottom center; z-index: 5; transform-style: preserve-3d; opacity: 0; pointer-events: none; }
+  .fall-front { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .split { left: 0; z-index: 20; pointer-events: none; background: #040404;
+    box-shadow: 0 -1px 2px rgba(0,0,0,.9), 0 1px 2px rgba(0,0,0,.9); }
+
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; gap: 16px;
+    padding: 0 16px; background: #0c0c0c; border-top: 1px solid #222; font: 14px system-ui, sans-serif; color: #aaa; }
+  body.bar-hidden #bar { display: none; }
+  #bar b { color: var(--ink); font: 600 20px ui-monospace, monospace; letter-spacing: .15em; }
+  #dot { width: 9px; height: 9px; border-radius: 50%; background: #a33; flex: none; }
+  #dot.on { background: #2f9e44; }
+  #bar form { margin-left: auto; display: flex; gap: 8px; }
+  #bar input { width: min(36vw, 360px); font: 15px system-ui; padding: 7px 10px; border-radius: 6px;
+    border: 1px solid #333; background: #161616; color: var(--ink); }
+  #bar button { font: 600 14px system-ui; padding: 7px 14px; border-radius: 6px; border: 0;
+    background: #2a2a2a; color: var(--ink); cursor: pointer; }
+  #bar .hint { color: #555; }
+  #bar #sound { background: #ffcc00; color: #141414; }
+  #bar #sound[hidden] { display: none; }
+  @media (max-width: 700px) { #bar .hint, #url { display: none; } }
+</style>
+<style id="flap-css"></style>
+</head>
+<body>
+<div id="stage"><div id="board" aria-live="polite"></div></div>
+<div id="bar">
+  <span id="dot" title="server connection"></span>
+  <span>Code <b id="code">····</b></span>
+  <span id="url"></span>
+  <span id="phones"></span>
+  <button id="sound" type="button">Click to enable sound</button>
+  <form id="local">
+    <input id="local-text" placeholder="Type to test (use | for a new line)" autocomplete="off" />
+    <button>Show</button>
+  </form>
+  <span class="hint">F fullscreen · H hide bar · M mute</span>
+</div>
+
+<script src="layout.js"></script>
+<script>
+{
+  const { SPOOL, COLORS, layout, chars } = window.Flap;
+  const qs = new URLSearchParams(location.search);
+  const saved = JSON.parse(sessionStorage.getItem("flap") || "{}");
+
+  const state = {
+    cols: +qs.get("cols") || saved.cols || 22,
+    rows: +qs.get("rows") || saved.rows || 6,
+    text: "", align: "left",
+    code: saved.code || "",
+    stepMs: 70,       // time per flap step
+    stagger: 18,      // ms delay per column when a new message starts
+    muted: false,
+  };
+  const save = () => sessionStorage.setItem("flap", JSON.stringify({ cols: state.cols, rows: state.rows, code: state.code }));
+
+  // ── Cells ─────────────────────────────────────────────────────────
+  // Each cell owns its state: `shown` is what the DOM shows right now,
+  // `target` is where it is heading. The loop only ever moves shown one
+  // step toward target and redraws from shown, so a new message arriving
+  // mid-flip simply changes targets — nothing can get out of sync.
+  const boardEl = document.getElementById("board");
+  let cells = [];
+
+  // ── Flap geometry (design units), same defaults as the original board.html ──
+  const G = {
+    width: 250, height: 540, split: 194, outerRadius: 30, bezelRadius: 30, radius: 24,
+    padBezel: 10, padHole: 24, pinch: 14, pinchHeight: 54, pinchSlope: 7,
+    baseGap: 7,          // original split gap between top and bottom flap
+    extraGapPx: 2,       // widen that gap by this many *screen* pixels
+    ridgeCount: 7, ridgeHeight: 7, ridgeGap: 1, ridgeRadius: 20,
+    fontSize: 247, fontY: -52, perspective: 3000,
+    gridGap: 50, boardPad: 59, // original 11px / 13px at scale 0.22, kept in proportion
+  };
+
+  function cornerArcs(w, h, r) {
+    const p = (v) => v.toFixed(1) + "px";
+    return {
+      tl: [`0px ${p(r)}`, `${p(r * .05)} ${p(r * .65)}`, `${p(r * .25)} ${p(r * .25)}`, `${p(r * .65)} ${p(r * .05)}`, `${p(r)} 0px`],
+      tr: [`${p(w - r)} 0px`, `${p(w - r * .65)} ${p(r * .05)}`, `${p(w - r * .25)} ${p(r * .25)}`, `${p(w - r * .05)} ${p(r * .65)}`, `${p(w)} ${p(r)}`],
+      br: [`${p(w)} ${p(h - r)}`, `${p(w - r * .05)} ${p(h - r * .65)}`, `${p(w - r * .25)} ${p(h - r * .25)}`, `${p(w - r * .65)} ${p(h - r * .05)}`, `${p(w - r)} ${p(h)}`],
+      bl: [`${p(r)} ${p(h)}`, `${p(r * .65)} ${p(h - r * .05)}`, `${p(r * .25)} ${p(h - r * .25)}`, `${p(r * .05)} ${p(h - r * .65)}`, `0px ${p(h - r)}`],
+    };
+  }
+
+  // Builds the per-size CSS: the hole and both flap halves are clipped to a
+  // rounded rectangle with a notch ("pinch") cut into each side at the split.
+  function flapCSS(scale) {
+    const s = G, gap = s.baseGap + s.extraGapPx / scale;
+    const hw = s.width - s.padHole * 2, hh = s.height - s.padHole * 2 + 10, r = s.radius;
+    const py1 = Math.max(r, s.split - s.pinchHeight - s.pinchSlope), py2 = s.split - s.pinchHeight;
+    const py3 = s.split + gap + s.pinchHeight, py4 = Math.min(hh - r, py3 + s.pinchSlope);
+    const c = cornerArcs(hw, hh, r);
+    const notchL = `0px ${py4}px,${s.pinch}px ${py3}px,${s.pinch}px ${py2}px,0px ${py1}px`;
+    const notchR = `${hw}px ${py1}px,${hw - s.pinch}px ${py2}px,${hw - s.pinch}px ${py3}px,${hw}px ${py4}px`;
+    const holeClip = `polygon(${c.tl},${c.tr},${notchR},${c.br},${c.bl},${notchL})`;
+    const topH = s.split;
+    const topClip = `polygon(${c.tl},${c.tr},${hw}px ${py1}px,${hw - s.pinch}px ${py2}px,${hw - s.pinch}px ${topH}px,${s.pinch}px ${topH}px,${s.pinch}px ${py2}px,0px ${py1}px)`;
+    const botH = hh - topH - gap, l3 = s.pinchHeight, l4 = s.pinchHeight + s.pinchSlope;
+    const botClip = `polygon(${s.pinch}px 0px,${hw - s.pinch}px 0px,${hw - s.pinch}px ${l3}px,${hw}px ${l4}px,${c.br},${c.bl},0px ${l4}px,${s.pinch}px ${l3}px)`;
+    const ridgesH = s.ridgeHeight * s.ridgeCount + s.ridgeGap * (s.ridgeCount - 1);
+    return `
+#board{gap:${s.gridGap * scale}px;padding:${s.boardPad * scale}px}
+.cell{width:${s.width * scale}px;height:${s.height * scale}px;perspective:${s.perspective}px}
+.flap{width:${s.width}px;height:${s.height}px;border-radius:${s.outerRadius}px;background:#0f0f0f;transform:scale(${scale})}
+.bezel{left:${s.padBezel}px;top:${s.padBezel - 7}px;width:${s.width - s.padBezel * 2}px;height:${s.height - s.padBezel * 2 + 10}px;border-radius:${s.bezelRadius}px;background:#000}
+.hole{left:${s.padHole}px;top:${s.padHole - 5}px;width:${hw}px;height:${hh}px;background:#000;clip-path:${holeClip}}
+.hole-bg{left:0;top:0;width:${hw}px;height:${hh}px;background:#040404;clip-path:${holeClip}}
+.w-top{left:0;top:0;width:${hw}px;height:${topH}px;overflow:hidden}
+.bg-top{background:#0f0f0f;clip-path:${topClip}}
+.w-bot{left:0;top:${topH + gap}px;width:${hw}px;height:${botH}px;overflow:hidden}
+.bg-bot{background:#0f0f0f;clip-path:${botClip}}
+.w-fall{left:0;top:0;width:${hw}px;height:${topH}px}
+.fall-front{clip-path:${topClip}}
+.split{width:${hw}px;top:${topH}px;height:${gap}px}
+.ridges{bottom:0;left:0;width:100%;height:${ridgesH}px}
+.ridge{height:${s.ridgeHeight}px;margin-bottom:${s.ridgeGap}px;border-radius:${s.ridgeRadius}px;background:linear-gradient(to bottom,#00000000 0%,#00000005 20%,#00000066 70%,#000000e6 100%)}
+.txt{width:${hw}px;height:${hh}px;font-size:${s.fontSize}px;transform:translate(0,${s.fontY}px)}
+.t-top{top:0}.t-bot{top:-${topH}px}`; // bottom half continues the glyph below the gap (nothing hidden)
+  }
+
+  const RIDGES = '<div class="ridge"></div>'.repeat(G.ridgeCount);
+  const CELL_HTML =
+    '<div class="flap"><div class="bezel"></div><div class="hole"><div class="hole-bg">' +
+    '<div class="w-top"><div class="bg-top"></div><div class="txt t-top"></div></div>' +
+    `<div class="w-bot"><div class="bg-bot"><div class="ridges">${RIDGES}</div></div><div class="txt t-bot"></div></div>` +
+    '<div class="w-fall"><div class="fall-front"><div class="bg-top"></div><div class="txt t-top"></div></div></div>' +
+    '<div class="split"></div></div></div></div>';
+
+  // A half = its background (for colour tiles) + its text layer.
+  function paint(half, ch) {
+    half.txt.textContent = COLORS[ch] ? "" : ch;
+    half.bg.style.background = COLORS[ch] || "";
+  }
+
+  function build() {
+    boardEl.style.gridTemplateColumns = `repeat(${state.cols}, auto)`;
+    boardEl.innerHTML = "";
+    cells = [];
+    for (let i = 0; i < state.cols * state.rows; i++) {
+      const el = document.createElement("div");
+      el.className = "cell";
+      el.innerHTML = CELL_HTML;
+      boardEl.appendChild(el);
+      const q = (sel) => el.querySelector(sel);
+      cells.push({
+        top: { bg: q(".w-top .bg-top"), txt: q(".w-top .txt") },
+        bot: { bg: q(".bg-bot"), txt: q(".w-bot .txt") },
+        fall: { bg: q(".fall-front .bg-top"), txt: q(".fall-front .txt") },
+        wrap: q(".w-fall"),
+        shown: " ", target: " ", nextAt: 0, botAt: 0, anim: null,
+      });
+    }
+    fit();
+  }
+
+  function fit() {
+    const stage = document.getElementById("stage").getBoundingClientRect();
+    const { cols, rows } = state;
+    const byW = (stage.width - 40) / (cols * G.width + (cols - 1) * G.gridGap + 2 * G.boardPad);
+    const byH = (stage.height - 40) / (rows * G.height + (rows - 1) * G.gridGap + 2 * G.boardPad);
+    state.scale = Math.max(0.02, Math.min(byW, byH));
+    document.getElementById("flap-css").textContent = flapCSS(state.scale);
+  }
+
+  function nextChar(from, to) {
+    const i = SPOOL.indexOf(from);
+    if (i === -1 || SPOOL.indexOf(to) === -1) return to; // off-spool chars & colours: one flip
+    return SPOOL[(i + 1) % SPOOL.length];
+  }
+
+  function setTargets(grid) {
+    const now = performance.now();
+    grid.forEach((ch, i) => {
+      const c = cells[i];
+      if (!c || c.target === ch) return;
+      const idle = c.shown === c.target;
+      c.target = ch;
+      if (idle) c.nextAt = now + (i % state.cols) * state.stagger + Math.floor(i / state.cols) * state.stagger * 2;
+    });
+    kick();
+  }
+
+  function step(c, now) {
+    const from = c.shown, to = nextChar(from, c.target);
+    c.shown = to;
+    const landing = to === c.target;
+    paint(c.top, to);                 // new char appears behind the flap
+    paint(c.fall, from);              // old top half falls away
+    c.wrap.style.opacity = "1";
+    if (c.anim) c.anim.cancel();
+    const dur = landing ? state.stepMs * 2.2 : state.stepMs;
+    c.anim = c.wrap.animate([{ transform: "rotateX(0)", opacity: 1 }, { transform: "rotateX(-90deg)", opacity: 0 }],
+      { duration: dur, easing: landing ? "ease-in" : "linear", fill: "forwards" });
+    c.botAt = now + dur * 0.5;        // bottom half updates as the flap passes
+    c.nextAt = now + dur;
+    click(landing);
+  }
+
+  let raf = 0;
+  function kick() { if (!raf) raf = requestAnimationFrame(tick); }
+  function tick(now) {
+    raf = 0;
+    let busy = false;
+    for (const c of cells) {
+      if (c.botAt && now >= c.botAt) {
+        paint(c.bot, c.shown);
+        c.botAt = 0;
+      }
+      if (c.shown !== c.target) {
+        busy = true;
+        if (now >= c.nextAt) step(c, now);
+      } else if (c.botAt || (c.anim && now < c.nextAt)) {
+        busy = true;
+      } else if (c.anim) {
+        c.anim.cancel(); c.anim = null;
+        c.wrap.style.opacity = "0";
+      }
+    }
+    if (busy) kick();
+  }
+
+  function show(text, align) {
+    state.text = text; state.align = align;
+    setTargets(layout(text, state.cols, state.rows, align).grid);
+  }
+
+  function resize(cols, rows) {
+    state.cols = Math.min(40, Math.max(4, cols | 0));
+    state.rows = Math.min(12, Math.max(1, rows | 0));
+    save();
+    build();
+    show(state.text, state.align);
+    send({ type: "size", cols: state.cols, rows: state.rows });
+  }
+
+  // ── Sound ────────────────────────────────────────────────────────
+  // Plays click.wav (the original recording) with slight pitch variation,
+  // or a synthesized click until it loads. Browsers keep audio suspended
+  // until the page gets a click, tap or key press, so the context is created
+  // at load (some browsers allow it straight away), unlocked on the first
+  // gesture, and the bar shows a button while sound is still blocked.
+  const MAX_VOICES = 8, MIN_GAP_MS = 25;
+  let actx = null, clickBuf = null, lastClick = 0, voices = 0, clicksPlayed = 0;
+  function audio() {
+    if (actx) return actx;
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { return null; }
+    actx.onstatechange = soundHint;
+    fetch("click.wav").then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+      .then((b) => actx.decodeAudioData(b)).then((d) => (clickBuf = d)).catch(() => {});
+    return actx;
+  }
+  function unlockAudio() {
+    const a = audio();
+    if (a && a.state !== "running") a.resume().then(soundHint, () => {});
+  }
+  for (const ev of ["pointerdown", "keydown", "touchend"]) addEventListener(ev, unlockAudio, { capture: true });
+
+  function soundHint() {
+    const btn = document.getElementById("sound");
+    const blocked = !actx || actx.state !== "running";
+    btn.hidden = !blocked && !state.muted;
+    btn.textContent = state.muted ? "Sound off (M)" : "Click to enable sound";
+  }
+
+  function click(landing) {
+    if (state.muted || !actx || actx.state !== "running" || voices >= MAX_VOICES) return;
+    const t = performance.now();
+    if (t - lastClick < (landing ? MIN_GAP_MS : MIN_GAP_MS * 2)) return;
+    lastClick = t;
+    const src = actx.createBufferSource(), g = actx.createGain();
+    if (clickBuf) {
+      src.buffer = clickBuf;
+      src.playbackRate.value = 1.5 + (Math.random() * 0.4 - 0.2);
+    } else {
+      const dur = 0.03, buf = actx.createBuffer(1, actx.sampleRate * dur, actx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (actx.sampleRate * 0.003));
+      src.buffer = buf;
+    }
+    g.gain.value = landing ? 0.8 : 0.45;
+    src.connect(g); g.connect(actx.destination);
+    voices++; clicksPlayed++;
+    src.onended = () => voices--;
+    src.start();
+  }
+
+  // ── Server connection ────────────────────────────────────────────
+  let ws = null;
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function connect() {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
+    ws.onopen = () => {
+      document.getElementById("dot").className = "on";
+      send({ type: "hello", code: state.code, cols: state.cols, rows: state.rows });
+    };
+    ws.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      if (m.type === "code") {
+        state.code = m.code; save();
+        document.getElementById("code").textContent = m.code;
+        document.getElementById("url").textContent = `${location.host}/phone.html`;
+        setPhones(m.phones);
+        if (m.text) show(m.text, m.align);
+        else if (!state.text) show(`\nSPLIT FLAP\nCODE ${m.code}`, "center");
+      }
+      if (m.type === "show") show(m.text, m.align);
+      if (m.type === "config") resize(m.cols, m.rows);
+      if (m.type === "phones") setPhones(m.count);
+    };
+    ws.onclose = () => {
+      document.getElementById("dot").className = "";
+      setTimeout(connect, 2000);
+    };
+  }
+  function setPhones(n) {
+    document.getElementById("phones").textContent = n ? `${n} phone${n > 1 ? "s" : ""} connected` : "";
+  }
+
+  // ── Local controls ───────────────────────────────────────────────
+  document.getElementById("local").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = document.getElementById("local-text").value.replace(/\|/g, "\n");
+    show(text, state.align);
+    send({ type: "show", text, align: state.align });
+  });
+  addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT") return;
+    const k = e.key.toLowerCase();
+    if (k === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
+    if (k === "h") { document.body.classList.toggle("bar-hidden"); fit(); }
+    if (k === "m") { state.muted = !state.muted; soundHint(); }
+  });
+  addEventListener("resize", fit);
+
+  // Exposed for automated tests.
+  window.__flap = { state, cells: () => cells, show, resize, sound: () => ({ state: actx && actx.state, wav: !!clickBuf, played: clicksPlayed }), layout: (t, a) => layout(t, state.cols, state.rows, a).grid };
+
+  build();
+  audio();
+  soundHint();
+  connect();
+}
+</script>
+</body>
+</html>

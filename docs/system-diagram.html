@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>splitflap.org system diagram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* VOICE: clinical engineering reference, like a station operations manual.
+   IDEA: a departure-hall signage panel: black boxes, white type, yellow wayfinding bands.
+   PICTURE: one large system map (phone, server, TV) with numbered red fault markers.
+   COLOUR and TYPE: white/charcoal grounds, signage yellow #ffcc00 for bands, signal red #e0301e only for faults; Barlow Condensed + Barlow.
+   LAYOUT: title, full-width map, then pairing sequence, protocol table, fault list, lite comparison. */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#121212);--ink:light-dark(#141414,#ededea);--dim:light-dark(#5c5c58,#a3a39e);
+  --line:light-dark(#d9d9d4,#2f2f2c);--panel:light-dark(#f4f4f1,#1b1b1a);--sign:#ffcc00;--fault:#e0301e}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Barlow,system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(28px,4vw,56px) max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+header.band{background:var(--sign);color:#141414;padding-bottom:28px}
+h1{font:700 clamp(32px,4.6vw,52px)/1.05 "Barlow Condensed",sans-serif;margin:0 0 12px;text-wrap:balance;max-width:24ch}
+h2{font:700 30px/1.1 "Barlow Condensed",sans-serif;margin:0 0 8px;text-wrap:balance}
+p{max-width:70ch;margin:0 0 12px}
+.lede{font-size:17px;max-width:72ch;margin:0}
+nav.scroll{display:flex;gap:18px;margin-top:18px;white-space:nowrap;font-weight:600}
+nav a{color:#141414}
+.scroll{overflow-x:auto}
+figure{margin:0}
+figcaption{color:var(--dim);font-size:14px;margin-top:10px;max-width:90ch}
+.map{min-width:880px}
+svg text{font-family:Barlow,system-ui,sans-serif}
+code{font:14px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 14px Barlow,sans-serif;color:var(--dim)}
+.alt{background:var(--panel)}
+.f{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--fault);color:#fff;font:700 13px Barlow,sans-serif}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px}
+@media(max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:8em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:7.5em;margin-inline-start:-8em;white-space:normal;color:var(--dim)}.stack td:empty{display:none}}
+</style><script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script></head>
+<body>
+<header class="band"><div class="wrap">
+  <h1>splitflap.org is one relay server between a TV board and a phone remote</h1>
+  <p class="lede">The Node server only pairs devices, relays commands and proxies weather.gov. All rendering, and all four display faults found in testing, live inside <code>board.html</code>.</p>
+  <nav class="scroll"><a href="#map">System map</a><a href="#pairing">Pairing</a><a href="#protocol">Messages</a><a href="#faults">Faults</a><a href="#lite">Lite rebuild</a></nav>
+</div></header>
+
+<section class="band" id="map"><div class="wrap">
+<h2>System map</h2>
+<figure>
+<div class="scroll"><svg class="map" viewBox="0 0 1240 640" role="img" aria-label="System map: the phone companion and the TV board both connect to server.js over one WebSocket each; the server relays commands between them, proxies weather.gov, and serves the static pages. Fault markers 1 to 4 sit on the board's render pipeline.">
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+</defs>
+<g fill="none" stroke="currentColor" stroke-width="1.5">
+  <rect x="20" y="40" width="240" height="360" rx="10"/>
+  <rect x="440" y="40" width="360" height="440" rx="10"/>
+  <rect x="980" y="40" width="240" height="520" rx="10"/>
+  <rect x="460" y="100" width="320" height="140" rx="6"/>
+  <rect x="460" y="258" width="320" height="58" rx="6"/>
+  <rect x="460" y="334" width="320" height="58" rx="6"/>
+  <rect x="460" y="410" width="320" height="52" rx="6" stroke-dasharray="4 4"/>
+  <rect x="36" y="100" width="208" height="40" rx="6"/>
+  <rect x="36" y="152" width="208" height="40" rx="6"/>
+  <rect x="36" y="204" width="208" height="40" rx="6"/>
+  <rect x="36" y="256" width="208" height="40" rx="6"/>
+  <rect x="36" y="340" width="208" height="40" rx="6"/>
+  <rect x="996" y="100" width="208" height="40" rx="6"/>
+  <rect x="996" y="166" width="208" height="40" rx="6"/>
+  <rect x="996" y="232" width="208" height="40" rx="6"/>
+  <rect x="996" y="298" width="208" height="40" rx="6"/>
+  <rect x="996" y="364" width="208" height="40" rx="6"/>
+  <rect x="996" y="440" width="208" height="40" rx="6"/>
+  <rect x="996" y="496" width="208" height="40" rx="6"/>
+  <rect x="460" y="560" width="320" height="56" rx="6"/>
+  <rect x="20" y="460" width="240" height="62" rx="6" stroke-dasharray="4 4"/>
+  <rect x="20" y="538" width="240" height="62" rx="6" stroke-dasharray="4 4"/>
+</g>
+<g fill="#ffcc00"><rect x="20" y="40" width="240" height="44" rx="10"/><rect x="440" y="40" width="360" height="44" rx="10"/><rect x="980" y="40" width="240" height="44" rx="10"/></g>
+<g font-weight="600" font-size="16" fill="#141414">
+  <text x="36" y="68">Phone · companion.html</text>
+  <text x="456" y="68">Node · server.js (Express + ws)</text>
+  <text x="996" y="68">TV · board.html</text>
+</g>
+<g font-size="13" fill="currentColor">
+  <text x="48" y="125">Pair: QR link or 6-char code</text>
+  <text x="48" y="177">Message cards, split by ---</text>
+  <text x="48" y="229">40+ style and timing settings</text>
+  <text x="48" y="281">Mode: message · clock · weather</text>
+  <text x="48" y="365">Geolocation → weather point</text>
+
+  <text x="472" y="124" font-weight="600">WebSocket hub</text>
+  <text x="472" y="146">boards Map: id → boardWs, companionWs,</text>
+  <text x="472" y="164">pendingWs, secret, settings, messages,</text>
+  <text x="472" y="182">mode, weatherPoint, weatherStation, locked</text>
+  <text x="472" y="206">120 msgs/min per socket · ping every 30s</text>
+  <text x="472" y="224">boards expire after 24h idle</text>
+  <text x="472" y="282" font-weight="600">HTTP: static /public · helmet</text>
+  <text x="472" y="302">/api/* rate-limited, 100 req / 15 min</text>
+  <text x="472" y="358" font-weight="600">REST: /api/health · /api/weather</text>
+  <text x="472" y="378">/api/weather/point</text>
+  <text x="472" y="432" font-weight="600">In-memory caches</text>
+  <text x="472" y="450">point 1h · forecast 10m · alerts 60s</text>
+
+  <text x="1008" y="125">ws.onmessage switch</text>
+  <text x="1008" y="191">messageToGrid / centerLine</text>
+  <text x="1008" y="257">flipToTarget + isFlipping</text>
+  <text x="1008" y="323">animQueue + one rAF loop</text>
+  <text x="1008" y="389">DOM cells (cellCache)</text>
+  <text x="1008" y="465">applySettings: rebuild +250ms</text>
+  <text x="1008" y="521">Audio: click.wav or synth</text>
+
+  <text x="472" y="584" font-weight="600">api.weather.gov</text>
+  <text x="472" y="604">points · stations · observations · alerts · forecast</text>
+
+  <text x="32" y="486" font-weight="600">index.html: landing page</text>
+  <text x="32" y="508">GET /api/health, demo board</text>
+  <text x="32" y="564" font-weight="600">custom-board.html: designer</text>
+  <text x="32" y="586">standalone, exports CSS</text>
+  <text x="996" y="590" font-size="12">QR drawn with qrcode-generator (cdnjs)</text>
+</g>
+<g stroke="currentColor" stroke-width="1.5" marker-end="url(#ah)">
+  <line x1="1100" y1="140" x2="1100" y2="164"/>
+  <line x1="1100" y1="206" x2="1100" y2="230"/>
+  <line x1="1100" y1="272" x2="1100" y2="296"/>
+  <line x1="1100" y1="338" x2="1100" y2="362"/>
+  <line x1="1100" y1="440" x2="1100" y2="406"/>
+</g>
+<g stroke="currentColor" stroke-width="2" marker-end="url(#ah)">
+  <line x1="262" y1="112" x2="438" y2="112"/>
+  <line x1="438" y1="134" x2="262" y2="134"/>
+  <line x1="802" y1="112" x2="978" y2="112"/>
+  <line x1="978" y1="134" x2="802" y2="134"/>
+</g>
+<g stroke="currentColor" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#ah)">
+  <line x1="244" y1="360" x2="458" y2="366"/>
+  <line x1="978" y1="420" x2="782" y2="374"/>
+  <line x1="620" y1="464" x2="620" y2="558"/>
+</g>
+<g font-size="12" fill="currentColor" text-anchor="middle">
+  <text x="350" y="64">pair · update_settings</text>
+  <text x="350" y="80">update_messages · play</text>
+  <text x="350" y="96">next · reset · set_mode</text>
+  <text x="350" y="156">paired · waiting_approval</text>
+  <text x="350" y="172">board_state · kicked</text>
+  <text x="890" y="80">relayed phone commands</text>
+  <text x="890" y="96">pair_request · joined</text>
+  <text x="890" y="156">register · reconnect</text>
+  <text x="890" y="172">approve · kick · board_state</text>
+  <text x="350" y="352">GET /api/weather/point</text>
+  <text x="890" y="430">GET /api/weather</text>
+  <text x="630" y="530" text-anchor="start">fetch, 8s timeout</text>
+  <text x="350" y="206" font-weight="600">WebSocket</text>
+  <text x="890" y="206" font-weight="600">WebSocket</text>
+</g>
+<g font-size="13" font-weight="700" text-anchor="middle">
+  <g><circle cx="1204" cy="186" r="12" fill="#e0301e"/><text x="1204" y="191" fill="#fff">4</text></g>
+  <g><circle cx="1204" cy="252" r="12" fill="#e0301e"/><text x="1204" y="257" fill="#fff">2</text></g>
+  <g><circle cx="1204" cy="318" r="12" fill="#e0301e"/><text x="1204" y="323" fill="#fff">1</text></g>
+  <g><circle cx="1204" cy="460" r="12" fill="#e0301e"/><text x="1204" y="465" fill="#fff">3</text></g>
+</g>
+</svg></div>
+<figcaption>Solid arrows are the two WebSocket connections; dashed arrows are HTTP fetches. The server never renders anything: it stores the last settings and messages per board and forwards companion commands to the board unchanged. Red markers are the faults listed below.</figcaption>
+</figure>
+</div></section>
+
+<section class="band alt" id="pairing"><div class="wrap grid2">
+<div>
+<h2>Pairing takes one of two paths</h2>
+<p>A scanned QR code carries the board's 32-character secret, so the server pairs the phone at once. A typed 6-character code has no secret, so the server asks the TV to approve it. In both cases the board is then locked to one phone until it disconnects or the TV kicks it; either event issues a new code and secret.</p>
+<p>After pairing, the phone pushes its full settings object and message text. The server keeps copies so a TV that reloads gets them back via <code>reconnect_board</code>.</p>
+</div>
+<figure>
+<svg viewBox="0 0 560 430" role="img" aria-label="Pairing sequence: the board registers and receives a code and secret; the phone pairs with the secret for instant pairing, or with the code alone, which requires approval on the TV.">
+<g fill="currentColor" font-size="13" font-weight="600" text-anchor="middle">
+  <text x="80" y="20">Phone</text><text x="280" y="20">Server</text><text x="480" y="20">TV board</text>
+</g>
+<g stroke="currentColor" stroke-width="1" stroke-dasharray="3 4"><line x1="80" y1="30" x2="80" y2="420"/><line x1="280" y1="30" x2="280" y2="420"/><line x1="480" y1="30" x2="480" y2="420"/></g>
+<g stroke="currentColor" stroke-width="1.5" marker-end="url(#ah2)">
+  <line x1="478" y1="60" x2="284" y2="60"/>
+  <line x1="282" y1="100" x2="476" y2="100"/>
+  <line x1="82" y1="160" x2="276" y2="160"/>
+  <line x1="278" y1="200" x2="84" y2="200"/>
+  <line x1="82" y1="260" x2="276" y2="260"/>
+  <line x1="282" y1="300" x2="476" y2="300"/>
+  <line x1="478" y1="340" x2="284" y2="340"/>
+  <line x1="278" y1="380" x2="84" y2="380"/>
+  <line x1="282" y1="400" x2="476" y2="400"/>
+</g>
+<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<g fill="currentColor" font-size="12" text-anchor="middle">
+  <text x="380" y="54">register_board</text>
+  <text x="380" y="94">registered {boardId, secret}</text>
+  <text x="480" y="124" font-size="11">shows QR + code</text>
+  <text x="180" y="154">pair {boardId, secret}</text>
+  <text x="180" y="194">paired (QR path, instant)</text>
+  <text x="180" y="254">pair {boardId} (typed code)</text>
+  <text x="380" y="294">pair_request</text>
+  <text x="380" y="334">approve_pair</text>
+  <text x="180" y="374">paired</text>
+  <text x="380" y="418" font-size="11">companion_joined → flips "DEVICE PAIRED"</text>
+</g>
+<rect x="8" y="138" width="544" height="72" rx="6" fill="none" stroke="#ffcc00" stroke-width="2"/>
+<rect x="8" y="238" width="544" height="152" rx="6" fill="none" stroke="#ffcc00" stroke-width="2"/>
+</svg>
+<figcaption>Yellow frames: the two alternative paths. Either one ends with <code>companion_joined</code> sent to the board.</figcaption>
+</figure>
+</div></section>
+
+<section class="band" id="protocol"><div class="wrap">
+<h2>Fifteen message types reach the server</h2>
+<p>Every companion command is relayed to the board as-is. The server only inspects a message to store settings, messages, mode and weather point for reconnects.</p>
+<div class="scroll"><table class="stack">
+<thead><tr><th>Message</th><th>From → to</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><code>register_board</code> / <code>reconnect_board</code></td><td>Board → server</td><td>Creates a board record with a new code and secret, or reattaches and returns saved settings, messages and mode.</td></tr>
+<tr><td><code>pair</code></td><td>Phone → server</td><td>Matching secret: paired at once. Code only: held as pending and <code>pair_request</code> sent to the board.</td></tr>
+<tr><td><code>approve_pair</code> / <code>reject_pair</code> / <code>kick_companion</code></td><td>Board → server</td><td>Completes or refuses pairing; a kick also rotates the code and secret.</td></tr>
+<tr><td><code>update_settings</code> / <code>update_messages</code></td><td>Phone → board</td><td>Stored on the server, then relayed. The board applies settings and rebuilds the grid if rows, columns or ridges change.</td></tr>
+<tr><td><code>play_sequence</code> / <code>next_message</code> / <code>reset_board</code> / <code>flip_message</code></td><td>Phone → board</td><td>Relayed. The board starts a flip, but drops it if one is already running.</td></tr>
+<tr><td><code>set_mode</code></td><td>Phone → board</td><td>Messages, clock (flips every second) or weather (the board polls <code>/api/weather</code> every 10 minutes).</td></tr>
+<tr><td><code>companion_disconnect</code></td><td>Phone → server</td><td>Unlocks the board and issues a new code and secret.</td></tr>
+<tr><td><code>board_state</code></td><td>Board → phone</td><td>Relayed status for the remote.</td></tr>
+</tbody></table></div>
+</div></section>
+
+<section class="band alt" id="faults"><div class="wrap">
+<h2>The display faults are all in the board's flip engine</h2>
+<p>Each was reproduced in headless Edge by pairing a scripted phone and comparing every cell on screen with the text sent. The board is correct when it is idle; it goes wrong when a command arrives mid-flip.</p>
+<div class="scroll"><table class="stack">
+<thead><tr><th></th><th>Fault</th><th>Where</th><th>What you see</th></tr></thead>
+<tbody>
+<tr><td><span class="f">1</span></td><td>The record of displayed characters only updates when an animation finishes, so a cancelled flip leaves it stale and later flips skip those cells</td><td><code>board.html:770, 780, 935</code></td><td>Sending <code>HI THERE</code> mid-flip showed <code>HIRTHERETRAIN TO PAQIM</code></td></tr>
+<tr><td><span class="f">2</span></td><td>A new flip while one is running returns at once and reports itself done</td><td><code>board.html:927</code></td><td>Play or Next pressed mid-flip is ignored; Next still advances the message index</td></tr>
+<tr><td><span class="f">3</span></td><td>The rebuild cancels animation now but replaces the cells 250ms later; a flip started in between animates detached cells</td><td><code>board.html:1440</code></td><td>Blank board while the engine believes letters are showing</td></tr>
+<tr><td><span class="f">4</span></td><td>Centering measures text with <code>.length</code>, so each colour emoji counts as two characters</td><td><code>board.html:1355</code></td><td>The last 🟩 in "DEVICE PAIRED" is cut in half and shows as a broken glyph</td></tr>
+</tbody></table></div>
+</div></section>
+
+<section class="band" id="lite"><div class="wrap">
+<h2>The lite rebuild keeps the relay and drops the rest</h2>
+<p>It lives in <code>lite/</code> and runs with <code>npm run lite</code> on port 3001. Each cell owns its current and target character, and one loop steps every cell toward its target, so a new message mid-flip just changes targets. The same nine scripted scenarios, including the four failing ones above, all pass.</p>
+<div class="scroll"><table class="stack">
+<thead><tr><th>Concern</th><th>Current app</th><th>Lite</th></tr></thead>
+<tbody>
+<tr><td>Code size</td><td>About 9,200 lines in 5 files</td><td>About 740 lines in 4 files</td></tr>
+<tr><td>Pairing</td><td>QR + secret, typed code with TV approval, one locked phone</td><td>4-character code; any number of phones</td></tr>
+<tr><td>Modes</td><td>Message sequences, clock, weather</td><td>One message at a time</td></tr>
+<tr><td>Settings</td><td>40+ visual knobs sent from the phone</td><td>Rows, columns, alignment</td></tr>
+<tr><td>Animation</td><td>Pre-scheduled action queue per flip</td><td>Per-cell state stepped by one loop; never drops or desyncs</td></tr>
+<tr><td>Text layout</td><td>Separate code on board and phone</td><td>One shared <code>layout.js</code>; word wrap; phone preview matches the board</td></tr>
+</tbody></table></div>
+</div></section>
+</body>
+</html>
