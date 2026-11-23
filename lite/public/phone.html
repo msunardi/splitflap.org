@@ -252,12 +252,22 @@
   $("text").addEventListener("input", preview);
   $("text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) showText($("text").value); });
   $("align").addEventListener("change", preview);
-  $("tiles").innerHTML = Object.keys(COLORS).map((c) => `<button type="button" aria-label="colour tile">${c}</button>`).join("");
-  $("tiles").addEventListener("click", (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    const ta = $("text"), s = ta.selectionStart;
-    ta.setRangeText(b.textContent, s, ta.selectionEnd, "end"); ta.focus(); preview();
-  });
+  colourTiles($("tiles"), $("text"));
+
+  // Colour-tile buttons that insert a tile at the cursor of `textarea`.
+  // Each tile fills one cell on the board.
+  function colourTiles(container, textarea) {
+    const names = { "🟥": "red", "🟧": "orange", "🟨": "yellow", "🟩": "green", "🟦": "blue", "🟪": "purple", "⬜": "white" };
+    container.innerHTML = Object.keys(COLORS)
+      .map((c) => `<button type="button" aria-label="Insert ${names[c] || "colour"} tile" title="${names[c] || "colour"} tile">${c}</button>`).join("");
+    container.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      const s = textarea.selectionStart;
+      textarea.setRangeText(b.textContent, s, textarea.selectionEnd, "end");
+      textarea.focus();
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));   // same path as typing
+    });
+  }
 
   // ── Widgets tab ──────────────────────────────────────────────────
   const GRIP = '<svg viewBox="0 0 10 16" aria-hidden="true"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="2" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="2" cy="14" r="1.6"/><circle cx="8" cy="14" r="1.6"/></svg>';
@@ -287,7 +297,8 @@
       <button type="button" data-geo style="width:100%">Use my location</button>
       <p class="hint" data-loc style="margin-top:8px"></p>
       <label>Units</label><select data-unit><option value="F">Fahrenheit</option><option value="C">Celsius</option></select>`,
-    notes: `<label>Note (up to 2 rows on the board)</label><textarea data-notes maxlength="200" rows="2" placeholder="Pick up groceries"></textarea>`,
+    notes: `<label>Note (up to 2 rows on the board)</label><textarea data-notes maxlength="200" rows="2" placeholder="Pick up groceries"></textarea>
+      <div class="tiles" data-tiles></div>`,
   };
 
   let sendTimer = 0;
@@ -431,6 +442,7 @@
       const n = q("[data-notes]");
       n.value = w.notes.text;
       n.addEventListener("input", () => { w.notes.text = n.value; changed(); });
+      colourTiles(q("[data-tiles]"), n);
     }
   }
 
